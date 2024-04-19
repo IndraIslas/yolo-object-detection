@@ -1,0 +1,9 @@
+train: Dataset/images/train/
+val: Dataset/images/val/
+test: Dataset/images/test/
+
+# number of classes
+nc: 2
+
+# class names
+names: ["card", "hand"]
