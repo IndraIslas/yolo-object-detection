@@ -3,6 +3,9 @@ Extras/saved_frames/*
 Labeling/Dataset
 Labeling/labelimg-data/*
 Train/yolov7/Dataset/*
+*.pt
+Run/weights/*
+Train/yolov7/runs/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
