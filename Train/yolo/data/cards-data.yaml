@@ -3,7 +3,7 @@ val: Dataset/images/val/
 test: Dataset/images/test/
 
 # number of classes
-nc: 2
+nc: 6
 
 # class names
-names: ["card", "hand"]
+names: ["card", "hand", "point", "camera", "rock", "ok"]

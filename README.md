@@ -10,6 +10,8 @@ This will download an app that is very useful to label images. After that, you c
 
 ```bash
 cd labelImg
+pip3 install pyqt5 lxml
+make qt5py3
 python3 labelImg.py
 ```
 

@@ -4,6 +4,8 @@ from models.experimental import attempt_load
 from utils.general import check_img_size, non_max_suppression, xyxy2xywh
 import numpy as np
 from time import time
+from process import process_frame
+
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -13,24 +15,7 @@ def get_device():
     print("Will run on CPU :(")
     return "cpu"
 
-def plot_bounding_boxes(image, data):
-    for box in data['predictions']['box_data']:
-        position = box['position']
-        class_id = box['class_id']
-        box_caption = box['box_caption']
-        
-        class_label = data['predictions']['class_labels'][class_id]
 
-        minX, minY, maxX, maxY = position['minX'], position['minY'], position['maxX'], position['maxY']
-        minX, minY, maxX, maxY = int(minX), int(minY), int(maxX), int(maxY)
-        
-        cv2.rectangle(image, (minX, minY), (maxX, maxY), (255, 0, 0), 2)
-        
-        label = f'{class_label}: {box_caption}'
-        (label_width, label_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        
-        cv2.rectangle(image, (minX, minY), (minX + label_width, minY - label_height - baseline), (255, 0, 0), thickness=cv2.FILLED)        
-        cv2.putText(image, label, (minX, minY - baseline), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
 def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou_thres=0.45, write_video=False):
     device = get_device()
@@ -95,8 +80,8 @@ def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou
                                         "domain": "pixel"}
                 box_data.append(box)
         boxes = {"predictions": {"box_data": box_data, "class_labels": names}}
+        img0 = process_frame(img0, boxes)
         
-        plot_bounding_boxes(img0, boxes)
         # Show results
         if write_video:
             out.write(img0)
@@ -113,10 +98,10 @@ def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou
         out.release()
 
 if __name__ == '__main__':
-    # vid_path = "../Videos/example1.mov"
-    vid_path = 0
-    weights = "weights/best2.pt"
+    vid_path = "../Videos/hand1.mov"
+    # vid_path = 0
+    weights = "weights/epoch_199.pt"
     img_size = 640
-    conf_thres = 0.7
+    conf_thres = 0.5
     iou_thres = 0.45
-    find_cards(vid_path, weights, img_size, conf_thres, iou_thres)
+    find_cards(vid_path, weights, img_size, conf_thres, iou_thres, write_video=False)
