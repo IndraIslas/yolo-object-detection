@@ -3,6 +3,12 @@ from collections import Counter
 import cv2
 import numpy as np
 import pytesseract
+from send_requests import ridinghood
+
+# classes = ["card", "hand", "point", "camera", "rock", "ok"]
+# ["action", "stop", "jump", "left", "point", "card"]
+processed_ids = {"card": set(), "camera": set(), "hand": set(), "point": set(), "rock": set(), "ok": set()}
+# processed_ids = {"action": set(), "stop": set(), "jump": set(), "left": set(), "point": set(), "card": set()}
 
 def plot_bounding_boxes(image, data):
     for box in data['predictions']['box_data']:
@@ -152,7 +158,41 @@ def is_within(card_coords, camera_coords):
     return (card_minX >= camera_minX and card_maxX <= camera_maxX and
             card_minY >= camera_minY and card_maxY <= camera_maxY)
 
-def check_camera(image, predictions):
+def find_closest_object(objects, object_class, bbox):
+    """
+    Finds the object ID with the centroid closest to the centroid of a given bounding box.
+    
+    Args:
+    objects (dict): A dictionary containing objects and their coordinates in OrderDicts.
+    object_class (str): The class of objects to compare against (e.g., 'card', 'hand').
+    bbox (tuple): The bounding box coordinates as (minX, minY, maxX, maxY).
+
+    Returns:
+    int: The object ID of the closest object. Returns None if no objects of the class are found.
+    """
+    if object_class not in objects or not objects[object_class]:
+        return None  # No objects of the specified class
+
+    # Calculate the centroid of the bounding box
+    bbox_centroid = np.array([(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2])
+
+    min_distance = float('inf')
+    closest_id = None
+
+    # Iterate through each object of the specified class
+    for obj_id, obj_centroid in objects[object_class].items():
+
+        # Calculate Euclidean distance from the bbox centroid to this object's centroid
+        distance = np.linalg.norm(bbox_centroid - obj_centroid)
+
+        # Check if this is the closest object found so far
+        if distance < min_distance:
+            min_distance = distance
+            closest_id = obj_id
+
+    return closest_id
+
+def check_camera_gesture(image, predictions, objects):
     box_data = predictions['box_data']
     class_labels = predictions['class_labels']
     
@@ -166,12 +206,29 @@ def check_camera(image, predictions):
     camera_cards = []
     for camera in cameras:
         camera_coords = (camera['position']['minX'], camera['position']['minY'], camera['position']['maxX'], camera['position']['maxY'])
+        camera_ct_id = find_closest_object(objects, 'camera', camera_coords)
+        
         for card in cards:
             card_coords = (card['position']['minX'], card['position']['minY'], card['position']['maxX'], card['position']['maxY'])
             if is_within(card_coords, camera_coords):
                 card_crop = image.crop(card_coords)
                 camera_cards.append(card_crop)
+                process_camera_gesture(card_crop, camera_ct_id)
     return camera_cards
+
+def process_camera_gesture(card_crop, camera_ct_id):
+    if camera_ct_id and camera_ct_id in processed_ids["camera"]:
+        return
+    # get text and get color
+    text = read_text_from_image(card_crop)
+    print(text)
+    #crop center of card
+    center = crop_center(card_crop)
+    color = most_frequent_color(center)
+    ridinghood(color, text)
+    processed_ids["camera"].add(camera_ct_id)
+
+
 
 def crop_center(pil_img):
     width, height = pil_img.size  # Get the dimensions of the image
@@ -203,6 +260,38 @@ def most_frequent_color(crop):
     most_frequent = color_counts.most_common(1)[0][0]  # Returns the color with the highest count
     # most_frequent =(most_frequent[2], most_frequent[1], most_frequent[1])
     return most_frequent
+
+def get_average_color(image, minX, minY, maxX, maxY):
+    """
+    Extracts a 10x10 crop centered on the centroid of the bounding box defined by
+    (minX, minY, maxX, maxY) in the provided image and computes the average color.
+
+    Args:
+    - image (np.array): The image from which to extract the color.
+    - minX, minY, maxX, maxY (int): Coordinates defining the bounding box.
+
+    Returns:
+    - average_color (tuple): The average BGR color of the crop as a tuple (B, G, R).
+    """
+    # Calculate the centroid of the bounding box
+    cX = int((minX + maxX) / 2)
+    cY = int((minY + maxY) / 2)
+
+    # Calculate the start and end points for the 10x10 crop
+    start_x = max(cX - 5, 0)
+    start_y = max(cY - 5, 0)
+    end_x = min(cX + 5, image.shape[1])
+    end_y = min(cY + 5, image.shape[0])
+
+    # Extract the 10x10 crop from the image
+    # Adjust the crop size if near the borders
+    crop = image[start_y:end_y, start_x:end_x]
+
+    # Calculate the average color of the crop
+    average_color = np.mean(crop, axis=(0, 1))
+
+    # Return the average color as a tuple, converting it to integer values
+    return tuple(int(color) for color in average_color)
 
 def display_color_rectangle(color):
     # Create an image of size 100x100
@@ -279,10 +368,20 @@ def change_hue_based_on_color(image, colors):
 
     return final_image
 
-def process_frame(frame, boxes):
+def draw_centroids(image, objects, class_label):
+    # loop over the tracked objects
+    for (objectID, centroid) in objects.items():
+    # draw both the ID of the object and the centroid of the
+    # object on the output frame
+        text = f"{class_label} ID {objectID}"
+        # centroid = centroid[0]
+        cv2.putText(image, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.circle(image, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
+
+def process_frame(frame, boxes, objects):
     img = frame.copy()
     pointed_cards = check_and_crop_overlap(Image.fromarray(img), boxes['predictions'])
-    camera_cards = check_camera(Image.fromarray(img), boxes['predictions'])
+    camera_cards = check_camera_gesture(Image.fromarray(img), boxes['predictions'], objects)
     plot_bounding_boxes(img, boxes)
     colors = []
     for card, non_overlapped_part in pointed_cards:
@@ -305,7 +404,9 @@ def process_frame(frame, boxes):
     if len(colors) > 0:
         img = change_hue_based_on_color(img, colors)
     img = add_color_squares(img, colors)
-    
+
+    for class_name in objects:
+        draw_centroids(img, objects[class_name], class_name)
     # if len(colors) > 0:
     #     cv2.imshow('Processed Image', img)
     #     cv2.waitKey(0)
