@@ -3,12 +3,16 @@ from collections import Counter
 import cv2
 import numpy as np
 import pytesseract
-from send_requests import ridinghood
+from send_requests import ridinghood, play_pause, change_song
 
 # classes = ["card", "hand", "point", "camera", "rock", "ok"]
 # ["action", "stop", "jump", "left", "point", "card"]
-processed_ids = {"card": set(), "camera": set(), "hand": set(), "point": set(), "rock": set(), "ok": set()}
+# processed_ids = {"card": set(), "camera": set(), "hand": set(), "point": set(), "rock": set(), "ok": set()}
+# classes = ["peace", "palma", "l-sign", "indice", "puño", "card"]
 # processed_ids = {"action": set(), "stop": set(), "jump": set(), "left": set(), "point": set(), "card": set()}
+classes = ["point", "hand", "scissor", "rock", "card", "delta"]
+# processed_ids = {"peace": set(), "palma": set(), "l-sign": set(), "indice": set(), "punch": set(), "card": set()}
+processed_ids = {"point": set(), "hand": set(), "scissor": set(), "rock": set(), "card": set(), "delta": set()}
 
 def plot_bounding_boxes(image, data):
     for box in data['predictions']['box_data']:
@@ -90,13 +94,13 @@ def crop_non_overlapping_part(image, card, point):
     # If no non-overlapping part is found (fully overlapped), return None
     return None
 
-def check_and_crop_overlap(image, predictions):
+def check_and_crop_overlap(image, predictions, intended_label='point'):
     box_data = predictions['box_data']
     class_labels = predictions['class_labels']
     
     # Finding the index for 'card' and 'point'
     card_index = [i for i, label in class_labels.items() if label == 'card']
-    point_index = [i for i, label in class_labels.items() if label == 'point']
+    point_index = [i for i, label in class_labels.items() if label == intended_label]
     
     cards = [box for box in box_data if box['class_id'] in card_index]
     points = [box for box in box_data if box['class_id'] in point_index]
@@ -378,10 +382,61 @@ def draw_centroids(image, objects, class_label):
         cv2.putText(image, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         cv2.circle(image, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
 
+
+def trigger_play_pause(predictions, objects, intended_class='scissor'):
+    # Check if there's a detection of "scissor"
+    for box in predictions['box_data']:
+        class_id = box['class_id']
+        
+        # Get the class label using class_id
+        class_label = predictions['class_labels'][class_id]
+        
+        # Check if the detected object is a scissor and its ID hasn't been processed yet
+        if class_label == intended_class:
+            # Print play_pause as the scissor object is detected and it's not processed
+            coords = box['position']
+            object_id = find_closest_object(objects, intended_class, (coords['minX'], coords['minY'], coords['maxX'], coords['maxY']))
+            if object_id is None:
+                continue
+            if object_id not in processed_ids[intended_class]:
+                print(f"found {intended_class} not processed, play_pause")
+                play_pause()
+                # Mark this scissor object ID as processed to avoid repeated processing
+                processed_ids[intended_class].add(object_id)
+
+def trigger_change_song(img, predictions, objects):
+    rock_cards = check_and_crop_overlap(Image.fromarray(img), predictions, intended_label='rock')
+    box_data = predictions['box_data']
+    class_labels = predictions['class_labels']
+    
+    # Finding the index for 'card' and 'point'
+    rock_index = [i for i, label in class_labels.items() if label == 'rock']
+    
+    rocks = [box for box in box_data if box['class_id'] in rock_index]
+    if len(rocks) == 0:
+        return
+    rock = rocks[0]
+    coords = rock['position']
+    object_id = find_closest_object(objects, 'rock', (coords['minX'], coords['minY'], coords['maxX'], coords['maxY']))
+    if object_id is None:
+        return
+    if object_id in processed_ids['rock']:
+        return
+    #get rock class position
+    
+    for card, non_overlapped_part in rock_cards:
+        card_center = crop_center(non_overlapped_part)
+        color = most_frequent_color(card_center)
+        if color is not None:
+            change_song(color)
+            processed_ids['rock'].add(object_id)
+
 def process_frame(frame, boxes, objects):
     img = frame.copy()
     pointed_cards = check_and_crop_overlap(Image.fromarray(img), boxes['predictions'])
     camera_cards = check_camera_gesture(Image.fromarray(img), boxes['predictions'], objects)
+    trigger_play_pause(boxes['predictions'], objects)
+    trigger_change_song(img, boxes['predictions'], objects)
     plot_bounding_boxes(img, boxes)
     colors = []
     for card, non_overlapped_part in pointed_cards:

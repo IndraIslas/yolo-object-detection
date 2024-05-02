@@ -40,8 +40,11 @@ def translate_bbox(minX, minY, maxX, maxY, original_size, new_size):
 
 def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou_thres=0.45, write_video=False):
 
-    classes = ["card", "hand", "point", "camera", "rock", "ok"]
+    # classes = ["card", "hand", "point", "camera", "rock", "ok"]
     # classes = ["action", "stop", "jump", "left", "point", "card"]
+    # classes = ["peace", "palma", "l-sign", "indice", "punch", "card"]
+    # classes_map = {"action": "peace", "stop": "palma", "jump": "l-sign", "left": "indice", "point": "punch", "card": "card"}
+    classes = ["point", "hand", "scissor", "rock", "card", "delta"]
     device = get_device()
     model = attempt_load(weights, map_location="cpu")  # load FP32 model
     print(device)
@@ -66,7 +69,7 @@ def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou
         # Define the codec and create a VideoWriter object to write the video
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
         out = cv2.VideoWriter()
-        succes = out.open(out_vid_path,fourcc, fps, (img_size, img_size),True)
+        succes = out.open(out_vid_path,fourcc, fps, (frame_width, frame_height),True)
         print("Success: ", succes)
     counter = 0
     while cap.isOpened():
@@ -90,7 +93,8 @@ def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou
             img = img.unsqueeze(0)
         # print("Time taken for preprocessing: ", time() - preprocess_time)
         s = time()
-        pred = model(img, augment=False)[0] # returns inference
+        with torch.no_grad():
+            pred = model(img, augment=False)[0] # returns inference
         # print("Time taken for prediction: ", time() - s)
 
         pred = non_max_suppression(pred, conf_thres, iou_thres, classes=None, agnostic=False) # returns list of detections
@@ -146,8 +150,8 @@ def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou
             cv2.imshow('result', frame)
             if cv2.waitKey(20) & 0xFF==ord('q'):
                 break
-            for _ in range(5):
-                cap.read()
+            # for _ in range(5):
+            #     cap.read()
             
     cap.release()
     cv2.destroyAllWindows()
@@ -155,11 +159,11 @@ def find_cards(vid_path, weights='yolov7.pt', img_size=640, conf_thres=0.25, iou
         out.release()
 
 if __name__ == '__main__':
-    # vid_path = "../Videos/video1.mov"
-    vid_path = 0
-    weights = "weights/epoch_199.pt"
+    # vid_path = "../Videos/test4.mov"
+    vid_path = 1
+    weights = "weights/best-big.pt"
     img_size = 640
-    conf_thres = 0.2
+    conf_thres = 0.5
     iou_thres = 0.45
     find_cards(vid_path, weights, img_size, conf_thres, iou_thres, write_video=False)
 #(250, 204, 166)
